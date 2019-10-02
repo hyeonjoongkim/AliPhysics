@@ -468,12 +468,12 @@ Int_t AliRDHFCutsLctopKpi::IsSelectedPID(AliAODRecoDecayHF* obj) {
     for(Int_t i=0;i<3;i++){
      AliAODTrack *track=(AliAODTrack*)obj->GetDaughter(i);
      if(!track) return 0;
-     // identify kaon
-     if(track->P()<0.55){
-      fPidHF->SetTOF(kFALSE);
-      fPidHF->SetTOFdecide(kFALSE);
-     }
      if(i==1) {
+      // identify kaon
+      if(track->P()<0.55){
+       fPidHF->SetTOF(kFALSE);
+       fPidHF->SetTOFdecide(kFALSE);
+      }
       Int_t isKaon=0;
       isKaon=fPIDStrategy==kNSigmaMin?fPidHF->MatchTPCTOFMin(track,3):fPidHF->MakeRawPid(track,3);
       if(isKaon>=1) iskaon1=kTRUE;
@@ -791,7 +791,7 @@ void AliRDHFCutsLctopKpi::SetStandardCutsPP2010() {
  SetUsePID(kTRUE);
  SetOptPileup(kTRUE);
  
- PrintAll();
+ // PrintAll();
 
  for(Int_t iiv=0;iiv<nvars;iiv++){
   delete [] prodcutsval[iiv];
@@ -894,7 +894,7 @@ void AliRDHFCutsLctopKpi::SetStandardCutsPbPb2010() {
  SetUsePID(kTRUE);
 
 
- PrintAll();
+ // PrintAll();
 
  for(Int_t iiv=0;iiv<nvars;iiv++){
   delete [] prodcutsval[iiv];
@@ -1393,7 +1393,7 @@ void AliRDHFCutsLctopKpi::SetStandardCutsPPb2013() {
 
  SetUsePID(kTRUE);
 
- PrintAll();
+ // PrintAll();
 
  for(Int_t iiv=0;iiv<nvars;iiv++){
   delete [] prodcutsval[iiv];

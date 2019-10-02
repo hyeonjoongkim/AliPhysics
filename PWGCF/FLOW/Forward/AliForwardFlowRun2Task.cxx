@@ -11,56 +11,42 @@
 #include <iostream>
 #include <TROOT.h>
 #include <TSystem.h>
-#include <TInterpreter.h>
 #include <TList.h>
 #include <THn.h>
 
-#include "AliLog.h"
+#include "AliAnalysisManager.h"
+#include "AliInputEventHandler.h"
+
+#include "AliAODEvent.h"
+#include "AliMCEvent.h"
+
 #include "AliForwardFlowRun2Task.h"
 #include "AliForwardQCumulantRun2.h"
 #include "AliForwardGenericFramework.h"
-
+#include "AliForwardFlowUtil.h"
 #include "AliAODForwardMult.h"
-#include "AliAODCentralMult.h"
-#include "AliAODEvent.h"
-
-#include "AliForwardUtil.h"
-
-#include "AliVVZERO.h"
-#include "AliAODVertex.h"
-#include "AliCentrality.h"
-
-#include "AliESDEvent.h"
-#include "AliVTrack.h"
-#include "AliESDtrack.h"
-#include "AliAODTrack.h"
-#include "AliAODTracklets.h"
-
-#include "AliAnalysisFilter.h"
-#include "AliMultSelection.h"
-#include "AliMultiplicity.h"
-#include "AliAnalysisManager.h"
-#include "AliInputEventHandler.h"
 
 using namespace std;
 ClassImp(AliForwardFlowRun2Task)
 #if 0
-; // For emacs 
+; // For emacs
 #endif
+
 
 //_____________________________________________________________________
 AliForwardFlowRun2Task::AliForwardFlowRun2Task() : AliAnalysisTaskSE(),
   fAOD(0),           // input event
   fOutputList(0),    // output list
-  fStdQCList(0), 
-  fGFList(0),
+  fAnalysisList(0),
   fEventList(0),
   fRandom(0),
+  centralDist(),
+  refDist(),
+  forwardDist(),
+  fStorage(nullptr),
   fSettings(),
-  fEventCuts(),
-  fMultTOFLowCut(),
-  fMultTOFHighCut(),
-  fMultCentLowCut()
+  fUtil(),
+  fCalculator()
   {
   //
   //  Default constructor
@@ -68,124 +54,133 @@ AliForwardFlowRun2Task::AliForwardFlowRun2Task() : AliAnalysisTaskSE(),
   }
 
 //_____________________________________________________________________
-  AliForwardFlowRun2Task::AliForwardFlowRun2Task(const char* name) : AliAnalysisTaskSE(name),
+AliForwardFlowRun2Task::AliForwardFlowRun2Task(const char* name) : AliAnalysisTaskSE(name),
   fAOD(0),           // input event
   fOutputList(0),    // output list
-  fStdQCList(0), 
-  fGFList(0),
+  fAnalysisList(0),
   fEventList(0),
   fRandom(0),
+  centralDist(),
+  refDist(),
+  forwardDist(),
+  fStorage(nullptr),
   fSettings(),
-  fEventCuts(),
-  fMultTOFLowCut(),
-  fMultTOFHighCut(),
-  fMultCentLowCut()
+  fUtil(),
+  fCalculator()
   {
-  // 
+  //
   //  Constructor
   //
   //  Parameters:
   //   name: Name of task
   //
-    DefineOutput(1, TList::Class());
-  }
+
+  // Rely on validation task for event and track selection
+  DefineInput(1, AliForwardTaskValidation::Class());
+
+  DefineOutput(1, AliForwardFlowResultStorage::Class());
+}
 
 //_____________________________________________________________________
-  void AliForwardFlowRun2Task::UserCreateOutputObjects()
-  {
+void AliForwardFlowRun2Task::UserCreateOutputObjects()
+{
   //
   //  Create output objects
   //
+  //bool saveAutoAdd = TH1::AddDirectoryStatus();
 
   fOutputList = new TList();          // the final output list
   fOutputList->SetOwner(kTRUE);       // memory stuff: the list is owner of all objects it contains and will delete them if requested
 
-  fEventCuts.AddQAplotsToList(fOutputList);
+  TRandom r = TRandom();              // random integer to use for creation of samples (used for error bars).
+                                      // Needs to be created here, otherwise it will draw the same random number.
 
-  TRandom r = TRandom();              // random integer to use for creation of samples (used for error bars). 
-                                        // Needs to be created here, otherwise it will draw the same random number.
+  fAnalysisList    = new TList();
+  fAnalysisList   ->SetName("cumulants");
 
-  fStdQCList = new TList(); 
-  fGFList = new TList();
-  fStdQCList->SetName("StdQC"); 
-  fGFList->SetName("GF");
+  fOutputList->Add(fAnalysisList);
 
-  fEventList = new TList();
-
-  fEventList->Add(new TH1D("Centrality","Centrality",10,0,100));
-  fEventList->Add(new TH1D("Vertex","Vertex",fSettings.fNZvtxBins,fSettings.fZVtxAcceptanceLowEdge,fSettings.fZVtxAcceptanceUpEdge));
-  fEventList->Add(new TH2F("hOutliers","Maximum #sigma from mean N_{ch} pr. bin", 
-     20, 0., 100., 500, 0., 5.)); //((fFlags & kMC) ? 15. : 5. // Sigma <M> histogram 
-  fEventList->Add(new TH1D("FMDHits","FMDHits",100,0,10));
-
-  fEventList->SetName("EventInfo");
-
-  fStdQCList->Add(new TList());
-  fStdQCList->Add(new TList());
-  static_cast<TList*>(fStdQCList->At(0))->SetName("Reference");
-  static_cast<TList*>(fStdQCList->At(1))->SetName("Differential");  
-
-  fGFList->Add(new TList());
-  fGFList->Add(new TList());   
-  fGFList->Add(new TList());   
-  static_cast<TList*>(fGFList->At(0))->SetName("Reference");
-  static_cast<TList*>(fGFList->At(1))->SetName("Differential"); 
-  static_cast<TList*>(fGFList->At(2))->SetName("AutoCorrection"); 
-
-    static_cast<TList*>(fGFList->At(2))->Add(new TH1F("fQcorrfactor", "fQcorrfactor", 1, -6.0, 6.0)); //(eta, n)
-    static_cast<TList*>(fGFList->At(2))->Add(new TH1F("fpcorrfactor", "fpcorrfactor", fSettings.fNDiffEtaBins, -6.0, 6.0)); //(eta, n)
-
-    fOutputList->Add(fStdQCList);
-    fOutputList->Add(fGFList);
-
-    fOutputList->Add(fEventList);
-
-    // do analysis to a maximum of v_5
-    Int_t fMaxMoment = 5;
-    // create a THn for each harmonic
-    for (Int_t n = 2; n <= fMaxMoment; n++) {
-
-      Int_t dimensions = 5;
-
-      Int_t dbins[5] = {fSettings.fnoSamples, fSettings.fNZvtxBins, fSettings.fNDiffEtaBins, fSettings.fCentBins, fSettings.kSinphi1phi2phi3p+1} ;
-      Int_t rbins[5] = {fSettings.fnoSamples, fSettings.fNZvtxBins, fSettings.fNRefEtaBins, fSettings.fCentBins, fSettings.kSinphi1phi2phi3p+1} ;
-      Double_t xmin[5] = {0,fSettings.fZVtxAcceptanceLowEdge, -6.0, 0, 0};
-      Double_t xmax[5] = {10,fSettings.fZVtxAcceptanceUpEdge, 6, 100, (double)(fSettings.kSinphi1phi2phi3p+1)};
+  // do analysis from v_2 to a maximum of v_5
+  constexpr Int_t dimensions = 7;
+  Int_t ptnmax =  (fSettings.doPt ? 5 : 0);
 
 
-      static_cast<TList*>(fGFList->At(0))->Add(new THnD(Form("cumuRef_v%d", n), Form("cumuRef_v%d", n), dimensions, rbins, xmin, xmax));
-      static_cast<TList*>(fGFList->At(1))->Add(new THnD(Form("cumuDiff_v%d", n),Form("cumuDiff_%d", n), dimensions, dbins, xmin, xmax));
-      static_cast<TList*>(fStdQCList->At(0))->Add(new THnD(Form("cumuRef_v%d", n), Form("cumuRef_v%d", n), dimensions, rbins, xmin, xmax));
-      static_cast<TList*>(fStdQCList->At(1))->Add(new THnD(Form("cumuDiff_v%d", n),Form("cumuDiff_%d", n), dimensions, dbins, xmin, xmax));
 
-      // The THn has dimensions [random samples, vertex position, eta, centrality, kind of variable to store]
-      static_cast<THnD*>(static_cast<TList*>(fGFList->At(0))   ->FindObject(Form("cumuRef_v%d", n)))->GetAxis(0)->SetName("samples");
-      static_cast<THnD*>(static_cast<TList*>(fGFList->At(0))   ->FindObject(Form("cumuRef_v%d", n)))->GetAxis(1)->SetName("vertex");
-      static_cast<THnD*>(static_cast<TList*>(fGFList->At(0))   ->FindObject(Form("cumuRef_v%d", n)))->GetAxis(2)->SetName("eta");
-      static_cast<THnD*>(static_cast<TList*>(fGFList->At(0))   ->FindObject(Form("cumuRef_v%d", n)))->GetAxis(3)->SetName("cent");
-      static_cast<THnD*>(static_cast<TList*>(fGFList->At(0))   ->FindObject(Form("cumuRef_v%d", n)))->GetAxis(4)->SetName("identifier");
-      static_cast<THnD*>(static_cast<TList*>(fStdQCList->At(0))->FindObject(Form("cumuRef_v%d", n)))->GetAxis(0)->SetName("samples");
-      static_cast<THnD*>(static_cast<TList*>(fStdQCList->At(0))->FindObject(Form("cumuRef_v%d", n)))->GetAxis(1)->SetName("vertex");
-      static_cast<THnD*>(static_cast<TList*>(fStdQCList->At(0))->FindObject(Form("cumuRef_v%d", n)))->GetAxis(2)->SetName("eta");
-      static_cast<THnD*>(static_cast<TList*>(fStdQCList->At(0))->FindObject(Form("cumuRef_v%d", n)))->GetAxis(3)->SetName("cent");
-      static_cast<THnD*>(static_cast<TList*>(fStdQCList->At(0))->FindObject(Form("cumuRef_v%d", n)))->GetAxis(4)->SetName("identifier");
-      static_cast<THnD*>(static_cast<TList*>(fGFList->At(1))   ->FindObject(Form("cumuDiff_v%d", n)))->GetAxis(0)->SetName("samples");
-      static_cast<THnD*>(static_cast<TList*>(fGFList->At(1))   ->FindObject(Form("cumuDiff_v%d", n)))->GetAxis(1)->SetName("vertex");
-      static_cast<THnD*>(static_cast<TList*>(fGFList->At(1))   ->FindObject(Form("cumuDiff_v%d", n)))->GetAxis(2)->SetName("eta");
-      static_cast<THnD*>(static_cast<TList*>(fGFList->At(1))   ->FindObject(Form("cumuDiff_v%d", n)))->GetAxis(3)->SetName("cent");
-      static_cast<THnD*>(static_cast<TList*>(fGFList->At(1))   ->FindObject(Form("cumuDiff_v%d", n)))->GetAxis(4)->SetName("identifier");
-      static_cast<THnD*>(static_cast<TList*>(fStdQCList->At(1))->FindObject(Form("cumuDiff_v%d", n)))->GetAxis(0)->SetName("samples");
-      static_cast<THnD*>(static_cast<TList*>(fStdQCList->At(1))->FindObject(Form("cumuDiff_v%d", n)))->GetAxis(1)->SetName("vertex");
-      static_cast<THnD*>(static_cast<TList*>(fStdQCList->At(1))->FindObject(Form("cumuDiff_v%d", n)))->GetAxis(2)->SetName("eta");
-      static_cast<THnD*>(static_cast<TList*>(fStdQCList->At(1))->FindObject(Form("cumuDiff_v%d", n)))->GetAxis(3)->SetName("cent");
-      static_cast<THnD*>(static_cast<TList*>(fStdQCList->At(1))->FindObject(Form("cumuDiff_v%d", n)))->GetAxis(4)->SetName("identifier");
-    }
-    PostData(1, fOutputList);
-  }
+  // create a THn for each harmonic
+  Int_t rbins[dimensions] = {4,ptnmax + 1,fSettings.fnoSamples, fSettings.fNZvtxBins, fSettings.fNRefEtaBins, fSettings.fCentBins, static_cast<Int_t>(fSettings.rW4Four)} ; // n, pt, s, zvtx,eta,cent,kind
+  Double_t rmin[dimensions] = {0,0, 0,fSettings.fZVtxAcceptanceLowEdge, fSettings.fEtaLowEdge, 0, 1};
+  Double_t rmax[dimensions] = {4,double(ptnmax+1),double(fSettings.fnoSamples),fSettings.fZVtxAcceptanceUpEdge, fSettings.fEtaUpEdge, 100, static_cast<Double_t>(fSettings.kW4Four)+1};
+
+  fAnalysisList->Add(new THnD("reference", "reference", dimensions, rbins, rmin, rmax));
+
+  Int_t std_dbins[dimensions] = {4,ptnmax + 1,fSettings.fnoSamples, fSettings.fNZvtxBins, fSettings.fNDiffEtaBins, fSettings.fCentBins, static_cast<Int_t>(fSettings.dW4Four)} ;
+  Int_t mixed_dbins[dimensions] = {4,ptnmax + 1,fSettings.fnoSamples, fSettings.fNZvtxBins, fSettings.fNDiffEtaBins, fSettings.fCentBins, static_cast<Int_t>(fSettings.dWTwoTwoD)} ;
+  Double_t dmin[dimensions] = {0,0, 0,fSettings.fZVtxAcceptanceLowEdge, fSettings.fEtaLowEdge, 0, 1};
+  Double_t dmax[dimensions] = {4,double(ptnmax+1),double(fSettings.fnoSamples),fSettings.fZVtxAcceptanceUpEdge, fSettings.fEtaUpEdge, 100, static_cast<Double_t>(fSettings.dW4Four)+1};
+
+  fAnalysisList->Add(new THnD("standard_differential","standard_differential", dimensions, std_dbins, dmin, dmax));
+  fAnalysisList->Add(new THnD("mixed_differential","mixed_differential", dimensions, mixed_dbins, dmin, dmax));
+
+  // The THn has dimensions [n, pt, random samples, vertex position, eta, centrality, kind of variable to store]
+  // set names
+  THnD* reference = static_cast<THnD*>(fAnalysisList->At(0));
+  reference->GetAxis(0)->SetName("n");
+  reference->GetAxis(1)->SetName("pt");
+  reference->GetAxis(2)->SetName("samples");
+  reference->GetAxis(3)->SetName("vertex");
+  reference->GetAxis(4)->SetName("eta");
+  reference->GetAxis(5)->SetName("cent");
+  reference->GetAxis(6)->SetName("identifier");
+  
+  THnD* standard_differential = static_cast<THnD*>(fAnalysisList->At(1));
+  standard_differential->GetAxis(0)->SetName("n");
+  standard_differential->GetAxis(1)->SetName("pt");
+  standard_differential->GetAxis(2)->SetName("samples");
+  standard_differential->GetAxis(3)->SetName("vertex");
+  standard_differential->GetAxis(4)->SetName("eta");
+  standard_differential->GetAxis(5)->SetName("cent");
+  standard_differential->GetAxis(6)->SetName("identifier");
+
+  THnD* mixed_differential = static_cast<THnD*>(fAnalysisList->At(2));
+  mixed_differential->GetAxis(0)->SetName("n");
+  mixed_differential->GetAxis(1)->SetName("pt");
+  mixed_differential->GetAxis(2)->SetName("samples");
+  mixed_differential->GetAxis(3)->SetName("vertex");
+  mixed_differential->GetAxis(4)->SetName("eta");
+  mixed_differential->GetAxis(5)->SetName("cent");
+  mixed_differential->GetAxis(6)->SetName("identifier");
+
+  // Make centralDist
+  Int_t   centralEtaBins = (fSettings.useITS ? 200 : 400);
+  Int_t   centralPhiBins = (fSettings.useITS ? 20 : 400);
+  Double_t centralEtaMin = (fSettings.useSPD ? -2.5 : fSettings.useITS ? -4 : -1.5);
+  Double_t centralEtaMax = (fSettings.useSPD ? 2.5 : fSettings.useITS ? 6 : 1.5);
+
+  // Make refDist
+  Int_t   refEtaBins = (((fSettings.ref_mode & fSettings.kITSref) | (fSettings.ref_mode & fSettings.kFMDref)) ? 200 : 400);
+  Int_t   refPhiBins = (((fSettings.ref_mode & fSettings.kITSref) | (fSettings.ref_mode & fSettings.kFMDref)) ? 20  : 400);
+  Double_t refEtaMin = ((fSettings.ref_mode & fSettings.kSPDref) ? -2.5 
+                             : ((fSettings.ref_mode & fSettings.kITSref) | (fSettings.ref_mode & fSettings.kFMDref)) ? -4 
+                             : -1.5);
+  Double_t refEtaMax = ((fSettings.ref_mode & fSettings.kSPDref) ?  2.5 
+                             : ((fSettings.ref_mode & fSettings.kITSref) | (fSettings.ref_mode & fSettings.kFMDref)) ? 6 
+                             : 1.5);
+
+  centralDist = new TH2D("c","",centralEtaBins,centralEtaMin,centralEtaMax,centralPhiBins,0,2*TMath::Pi());
+  centralDist ->SetDirectory(0);
+  refDist     = new TH2D("r","",refEtaBins,refEtaMin,refEtaMax,refPhiBins,0,2*TMath::Pi());
+  refDist     ->SetDirectory(0);
+  forwardDist = new TH2D("ft","",200,-4,6,20,0,TMath::TwoPi());
+  forwardDist ->SetDirectory(0);
+
+  fStorage = new AliForwardFlowResultStorage(fSettings.fileName, fOutputList);
+
+  PostData(1, fStorage);
+}
 
 
 //_____________________________________________________________________
-void AliForwardFlowRun2Task::UserExec(Option_t */*option*/)
+void AliForwardFlowRun2Task::UserExec(Option_t *)
   {
   //
   //  Analyses the event with use of the helper class AliForwardQCumulantRun2
@@ -193,108 +188,95 @@ void AliForwardFlowRun2Task::UserExec(Option_t */*option*/)
   //  Parameters:
   //   option: Not used
   //
-
-  //..check if I have AOD
-    fAOD = dynamic_cast<AliAODEvent*>(InputEvent());
-    if(!fAOD){
-      Printf("%s:%d AODEvent not found in Input Manager",(char*)__FILE__,__LINE__);
-      return;
-    }
-
-  //..AliEventCuts selection
-    if(!fEventCuts.AcceptEvent(fInputEvent)) {
-      PostData(1, fOutputList);
-      return;
-    }  
-    
-    AliAODVertex* aodVtx = fAOD->GetPrimaryVertex();
-    
-    float v0Centr = 0;
-
-  // Get detector objects
-    AliMultSelection *MultSelection = (AliMultSelection*)fInputEvent->FindListObject("MultSelection");
-    v0Centr = MultSelection->GetMultiplicityPercentile("V0M");
-    AliAODForwardMult* aodfmult = static_cast<AliAODForwardMult*>(fAOD->FindListObject("Forward"));
-
-  //AliAODCentralMult* aodcmult = static_cast<AliAODCentralMult*>(fAOD->FindListObject("CentralClusters")); // only exists if created by user from ESDs
-  TH2D spddNdedp = TH2D("spddNdedp","spddNdedp",400,-1.5,1.5,400,0,2*TMath::Pi()); // Histogram to contain the central tracks
-
-  /*
-    AliAODTracklets* aodTracklets = fAOD->GetTracklets();
-
-    for (Int_t i = 0; i < aodTracklets->GetNumberOfTracklets(); i++) {
-      spddNdedp.Fill(aodTracklets->GetEta(i),aodTracklets->GetPhi(i), 1);
-    }
-  */
+  //forwardDist = 0;
 
 
+  fCalculator.fSettings = fSettings;
+  fUtil.fSettings = fSettings;
 
+  // Get the event validation object
+  AliForwardTaskValidation* ev_val = dynamic_cast<AliForwardTaskValidation*>(this->GetInputData(1));
+  if (!ev_val->IsValidEvent()){
+  //  PostData(1, this->fOutputList);
+    PostData(1, fStorage);
 
-  Int_t  iTracks(fAOD->GetNumberOfTracks());
-  for(Int_t i(0); i < iTracks; i++) {
-
-  // loop  over  all  the  tracks
-    AliAODTrack* track = static_cast<AliAODTrack *>(fAOD->GetTrack(i));
-    if (track->TestFilterBit(kHybrid)){
-      if (track->Pt() >= 0.2 && track->Pt() <= 5){
-        spddNdedp.Fill(track->Eta(),track->Phi(), 1);
-      }
-    }
+    return;
   }
 
+  if (!fSettings.esd){
+    AliAODEvent* aodevent = dynamic_cast<AliAODEvent*>(InputEvent());
+    fUtil.fAODevent = aodevent;
+    if(!aodevent) throw std::runtime_error("Not AOD as expected");
+  }
+  if (fSettings.mc) fUtil.fMCevent = this->MCEvent();
 
-  //const AliAODTracklets* spdmult = fAOD->GetMultiplicity();
+  fUtil.fevent = fInputEvent;
 
-  TH2D& forwarddNdedp = aodfmult->GetHistogram(); // also known as dNdetadphi
+  Double_t cent = fUtil.GetCentrality(fSettings.centrality_estimator);
+  // if (cent > 60.0){
+  //   //PostData(1, fOutputList);
+  //   return;
+  // }
 
-  if(!fAOD) return;              
-  //AliMultSelection* MultSelection = (AliMultSelection*)fAOD->FindListObject("MultSelection");
-  Float_t lPerc = v0Centr; 
 
- /* if ( MultSelection ) {
-    lPerc = MultSelection->GetMultiplicityPercentile("V0M");
-    //Quality check
-    Int_t lEvSelCode = MultSelection->GetEvSelCode();
-    if( lEvSelCode > 0 ) lPerc = lEvSelCode; // also if lEvSelCode > 200, the event is probably useless
-    //disregard!
-  } 
-  else
-  {
-    //If this happens, re-check if AliMultSelectionTask ran before your task!
-    AliInfo("Didn't find MultSelection!"); 
-  }*/
+  fUtil.FillData(refDist,centralDist,forwardDist);
+  
+  // dNdeta
+  // for (Int_t etaBin = 1; etaBin <= centralDist->GetNbinsX(); etaBin++) {
+  //   Double_t eta = centralDist->GetXaxis()->GetBinCenter(etaBin);
+  //   for (Int_t phiBin = 1; phiBin <= centralDist->GetNbinsX(); phiBin++) {
+  //     fdNdeta->Fill(eta,cent,centralDist->GetBinContent(etaBin,phiBin));
+  //   }
+  // }
+  // for (Int_t etaBin = 1; etaBin <= forwardDist->GetNbinsX(); etaBin++) {
+  //   Double_t eta = forwardDist->GetXaxis()->GetBinCenter(etaBin);
+  //   for (Int_t phiBin = 1; phiBin <= forwardDist->GetNbinsX(); phiBin++) {
+  //     fdNdeta->Fill(eta,cent,forwardDist->GetBinContent(etaBin,phiBin));
+  //   }
+  // }
+
+  Double_t zvertex = fUtil.GetZ();
+
+  //if (fSettings.makeFakeHoles) fUtil.MakeFakeHoles(*forwardDist);
+
+  //fCent->Fill(cent);
+  //fVertex->Fill(zvertex);
+  
+  if (fSettings.a5){
+    fCalculator.CumulantsAccumulate(forwardDist, cent, zvertex,kTRUE, true,false);
+    fCalculator.CumulantsAccumulate(centralDist, cent, zvertex,kFALSE,true,false);
+  }
+  else{
+    if (fSettings.ref_mode & fSettings.kFMDref) fCalculator.CumulantsAccumulate(refDist, cent, zvertex,kTRUE,true,false);
+    else fCalculator.CumulantsAccumulate(refDist, cent, zvertex,kFALSE,true,false);
+  }
+  fCalculator.CumulantsAccumulate(forwardDist, cent, zvertex,kTRUE,false,true);
+  fCalculator.CumulantsAccumulate(centralDist, cent, zvertex,kFALSE,false,true);  
 
   UInt_t randomInt = fRandom.Integer(fSettings.fnoSamples);
+  fCalculator.saveEvent(fOutputList, cent, zvertex,  randomInt, 0);
 
-  static_cast<TH1D*>(fEventList->FindObject("Centrality"))->Fill(lPerc);
-  static_cast<TH1D*>(fEventList->FindObject("Vertex"))->Fill(aodVtx->GetZ());
+  fCalculator.reset();
 
-  //AliForwardQCumulantRun2 calculator = AliForwardQCumulantRun2();
-  AliForwardGenericFramework calculator = AliForwardGenericFramework();
-  calculator.fSettings = fSettings;
+  centralDist->Reset();
+  
+  if (!(fSettings.ref_mode & fSettings.kFMDref) || (fSettings.mc && fSettings.esd)) refDist->Reset();
+  if ((fSettings.mc && fSettings.use_primaries_fwd) || (fSettings.mc && fSettings.esd)) {
+    forwardDist->Reset();
+    refDist->Reset();
+  }
 
-  calculator.CumulantsAccumulate(spddNdedp,fOutputList, lPerc, aodVtx->GetZ(),"central");
-
-  if (calculator.useEvent) calculator.CumulantsAccumulate(forwarddNdedp, fOutputList, lPerc, aodVtx->GetZ(),"forward");
-  if (calculator.useEvent) calculator.saveEvent(fOutputList, lPerc, aodVtx->GetZ(),  randomInt);
-  calculator.reset();
-
-  PostData(1, fOutputList); 
-
+  PostData(1, fStorage);
   return;
 }
-
-
 
 
 //_____________________________________________________________________
 void AliForwardFlowRun2Task::Terminate(Option_t */*option*/)
 {
+  std::cout << "Terminating" << '\n';
   return;
 }
 
 
 //_____________________________________________________________________
-//
-//
-// EOF

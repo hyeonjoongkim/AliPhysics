@@ -53,9 +53,7 @@ class AliVCluster;
 #include "AliFiducialCut.h"
 class AliCalorimeterUtils;
 #include "AliAnaWeights.h"
-
-// Jets
-class AliAODJetEventBackground;
+#include "AliMCAnalysisUtils.h"
 
 class AliCaloTrackReader : public TObject {
 
@@ -103,7 +101,7 @@ public:
   // Delta AODs
   
   virtual TList * GetAODBranchList()                 const { return fAODBranchList         ; }
-  void            SetDeltaAODFileName(TString name )       { fDeltaAODFileName = name      ; }
+  void            SetDeltaAODFileName(TString name)        { fDeltaAODFileName = name      ; }
   TString         GetDeltaAODFileName()              const { return fDeltaAODFileName      ; }
   void            SwitchOnWriteDeltaAOD()                  { fWriteOutputDeltaAOD = kTRUE  ; }
   void            SwitchOffWriteDeltaAOD()                 { fWriteOutputDeltaAOD = kFALSE ; }
@@ -259,6 +257,11 @@ public:
   void             SwitchOnClusterELinearityCorrection()   { fCorrectELinearity = kTRUE    ; }
   void             SwitchOffClusterELinearityCorrection()  { fCorrectELinearity = kFALSE   ; }
 
+  void             SwitchOnClusterEScalePerSMCorrection()  { fScaleEPerSM = kTRUE          ; }
+  void             SwitchOffClusterEScalePerSMCorrection() { fScaleEPerSM = kFALSE         ; }
+  void             SetScaleFactorPerSM(Int_t ism, Float_t factor)          
+                                                           { if ( ism < 22 && ism >= 0 ) fScaleFactorPerSM[ism] = factor ; }
+   
   Bool_t           IsEmbeddedClusterSelectionOn()    const { return fSelectEmbeddedClusters   ; }
   void             SwitchOnEmbeddedClustersSelection()     { fSelectEmbeddedClusters = kTRUE  ; }
   void             SwitchOffEmbeddedClustersSelection()    { fSelectEmbeddedClusters = kFALSE ; }
@@ -290,10 +293,10 @@ public:
   Int_t            GetV0Signal(Int_t i)              const { return fV0ADC[i]               ; }
   Int_t            GetV0Multiplicity(Int_t i)        const { return fV0Mul[i]               ; }
   
-  void             SetEMCALClusterListName(TString &name)  { fEMCALClustersListName = name  ; }
+  void             SetEMCALClusterListName(TString name)   { fEMCALClustersListName = name  ; }
   TString          GetEMCALClusterListName()         const { return fEMCALClustersListName  ; }
 
-  void             SetEMCALCellsListName(TString &name)    { fEMCALCellsListName = name     ; }
+  void             SetEMCALCellsListName(TString name)     { fEMCALCellsListName = name     ; }
   TString          GetEMCALCellsListName()           const { return fEMCALCellsListName     ; }
   
   // Arrays with clusters/track/cells access method
@@ -329,7 +332,7 @@ public:
   Bool_t           IsLEDEventRemoved()               const { return fRemoveLEDEvents         ; }   
   Bool_t           RejectLEDEvents();
   
-  void             SetFiredTriggerClassName(TString name ) { fFiredTriggerClassName = name   ; }
+  void             SetFiredTriggerClassName(TString name)  { fFiredTriggerClassName = name   ; }
   TString          GetFiredTriggerClassName()        const { return fFiredTriggerClassName   ; }
   TString          GetFiredTriggerClasses()          const { return GetInputEvent()->GetFiredTriggerClasses() ; }
   
@@ -580,6 +583,8 @@ public:
     if(fDataType!=kMC) return (AliMultSelection * ) fInputEvent->FindListObject("MultSelection") ; 
     else               return 0x0                                                                ; } 
 
+  void             SetMultiplicityWithPhysSel( Bool_t ps ) { fMultWithEventSel  = ps             ; }
+  
   virtual void     SwitchOnAliCentrality ()                { fUseAliCentrality  = kTRUE          ; }
   virtual void     SwitchOffAliCentrality()                { fUseAliCentrality  = kFALSE         ; }
   
@@ -648,7 +653,11 @@ public:
   
   Float_t               RadToDeg(Float_t rad)        const { rad *= TMath::RadToDeg(); return rad ; }
 
-  
+  virtual AliMCAnalysisUtils * GetMCAnalysisUtils()        { return           fMCUtils ; } 
+  virtual void                 SetMCAnalysisUtils(AliMCAnalysisUtils * mcutils) { 
+                                                             if (  fMCUtils ) delete fMCUtils; 
+                                                             fMCUtils = mcutils ; }
+
   //------------------------------------------------
   // MC analysis specific methods
   //-------------------------------------------------
@@ -753,7 +762,8 @@ public:
   virtual TString GetInputNonStandardJetBranchName()          { return fInputNonStandardJetBranchName   ; }
   
   virtual void FillInputBackgroundJets() ;
-  virtual AliAODJetEventBackground* GetBackgroundJets() const { return fBackgroundJets                 ; }
+  //  virtual AliAODJetEventBackground* GetBackgroundJets() const { return fBackgroundJets                 ; }
+  virtual TClonesArray* GetBackgroundJets() const { return fBackgroundJets                 ; }
   virtual void SetInputBackgroundJetBranchName(TString name) { fInputBackgroundJetBranchName   = name ; }
   virtual TString GetInputBackgroundJetBranchName()          { return fInputBackgroundJetBranchName   ; }
 
@@ -830,6 +840,9 @@ public:
   Bool_t           fCorrectELinearity;             ///<  Correct cluster linearity, always on.
   Bool_t           fSelectEmbeddedClusters;        ///<  Use only simulated clusters that come from embedding.
   
+  Bool_t           fScaleEPerSM ;                  ///<  Scale cluster energy by a constant factor, depending on SM 
+  Float_t          fScaleFactorPerSM[22];          ///<  Scale factor depending on SM number to be applied to cluster energy
+  
   Bool_t           fSmearShowerShape;              ///<  Smear shower shape (use in MC).
   Float_t          fSmearShowerShapeWidth;         ///<  Smear shower shape landau function "width" (use in MC).
   TRandom3         fRandom ;                       //!<! Random generator.
@@ -872,6 +885,7 @@ public:
   TString          fTaskName;                      ///<  Name of task that executes the analysis.
 	
   AliCalorimeterUtils * fCaloUtils ;               ///<  Pointer to AliCalorimeterUtils.
+  AliMCAnalysisUtils  * fMCUtils;                  ///<  MonteCarlo Analysis utils. Initialized in SetMC()
 
   AliAnaWeights  * fWeightUtils ;                  ///<  Pointer to AliAnaWeights.
   Double_t         fEventWeight ;                  ///<  Weight assigned to the event when filling histograms.
@@ -954,6 +968,7 @@ public:
   
   // Centrality/Event plane
   Bool_t           fUseAliCentrality;              ///<  Select as centrality estimator AliCentrality (Run1) or AliMultSelection (Run1 and Run2)
+  Bool_t           fMultWithEventSel;              ///<  Embedded event selection in multiplicity task activated
   TString          fCentralityClass;               ///<  Name of selected centrality class.     
   Int_t            fCentralityOpt;                 ///<  Option for the returned value of the centrality, possible options 5, 10, 100.
   Int_t            fCentralityBin[2];              ///<  Minimum and maximum value of the centrality for the analysis.
@@ -964,7 +979,8 @@ public:
   TClonesArray *   fNonStandardJets;               //!<! Temporal array with jets.
   TString          fInputNonStandardJetBranchName; ///<  Name of non standard jet branch.
   Bool_t           fFillInputBackgroundJetBranch;  ///<  Flag to use data from background jets.
-  AliAODJetEventBackground * fBackgroundJets;      //!<! Background jets.
+  //  AliAODJetEventBackground * fBackgroundJets;      //!<! Background jets.
+  TClonesArray * fBackgroundJets;      //!<! Background jets.
   TString          fInputBackgroundJetBranchName;  ///<  Name of background jet branch.
 
   TArrayI          fAcceptEventsWithBit;           ///<  Accept events if trigger bit is on.
@@ -1007,7 +1023,7 @@ public:
   AliCaloTrackReader & operator = (const AliCaloTrackReader & r) ; 
   
   /// \cond CLASSIMP
-  ClassDef(AliCaloTrackReader,80) ;
+  ClassDef(AliCaloTrackReader,83) ;
   /// \endcond
 
 } ;

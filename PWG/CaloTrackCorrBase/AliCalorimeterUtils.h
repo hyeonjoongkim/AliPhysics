@@ -146,6 +146,8 @@ class AliCalorimeterUtils : public TObject {
                                                              if(!fPHOSBadChannelMap) InitPHOSBadChannelStatusMap()    ; }
   void          SwitchOffBadChannelsRemoval()              { fRemoveBadChannels = kFALSE ; 
                                                              fEMCALRecoUtils->SwitchOffBadChannelsRemoval()           ; }
+
+  void          Load1DBadChannelMap()                      { fLoad1DBadChMap=kTRUE; }
   
   Bool_t        IsDistanceToBadChannelRecalculated() const { return fEMCALRecoUtils->IsDistanceToBadChannelRecalculated(); }
   void          SwitchOnDistToBadChannelRecalculation ()   { fEMCALRecoUtils->SwitchOnDistToBadChannelRecalculation() ; }
@@ -153,8 +155,8 @@ class AliCalorimeterUtils : public TObject {
   
   void          InitPHOSBadChannelStatusMap () ;
 
-  Int_t         GetEMCALChannelStatus(Int_t iSM , Int_t iCol, Int_t iRow) const { 
-                  return fEMCALRecoUtils->GetEMCALChannelStatus(iSM,iCol,iRow); }//Channel is ok by default
+  Int_t         GetEMCALChannelStatus(Int_t iSM , Int_t iCol, Int_t iRow, Int_t status) const { 
+                  return fEMCALRecoUtils->GetEMCALChannelStatus(iSM, iCol, iRow, status); }//Channel is ok by default
 
   Int_t         GetPHOSChannelStatus (Int_t imod, Int_t iCol, Int_t iRow) const { 
                   if(fPHOSBadChannelMap) return (Int_t) ((TH2I*)fPHOSBadChannelMap->At(imod))->GetBinContent(iCol,iRow); 
@@ -168,9 +170,11 @@ class AliCalorimeterUtils : public TObject {
                   ((TH2I*)fPHOSBadChannelMap->At(imod))->SetBinContent(iCol,iRow,c) ; }
     
   void          SetEMCALChannelStatusMap(Int_t iSM , TH2I* h) { fEMCALRecoUtils->SetEMCALChannelStatusMap(iSM,h)      ; }
+  void          SetEMCALChannelStatusMap1D(TH1C* h) { fEMCALRecoUtils->SetEMCALChannelStatusMap1D(h)      ; }
   void          SetPHOSChannelStatusMap(Int_t imod , TH2I* h) { fPHOSBadChannelMap ->AddAt(h,imod)                    ; }
   
   TH2I *        GetEMCALChannelStatusMap(Int_t iSM)  const { return fEMCALRecoUtils->GetEMCALChannelStatusMap(iSM)    ; }
+  TH1C *        GetEMCALChannelStatusMap1D()  const { return fEMCALRecoUtils->GetEMCALChannelStatusMap1D()    ; }
   TH2I *        GetPHOSChannelStatusMap(Int_t imod)  const { return (TH2I*)fPHOSBadChannelMap->At(imod)               ; }
 
   void          SetEMCALChannelStatusMap(TObjArray *map)   { fEMCALRecoUtils->SetEMCALChannelStatusMap(map)           ; }
@@ -224,6 +228,8 @@ class AliCalorimeterUtils : public TObject {
   void          SwitchOffRecalibration()                   { fRecalibration = kFALSE;
                   fEMCALRecoUtils->SwitchOffRecalibration()                                                           ; }
 	
+  void          Load1DRecalibration()                      { fLoad1DRecalibFactors=kTRUE; }
+
   void          InitPHOSRecalibrationFactors () ;
 	
   Float_t       GetEMCALChannelRecalibrationFactor(Int_t iSM , Int_t iCol, Int_t iRow) const { 
@@ -242,9 +248,11 @@ class AliCalorimeterUtils : public TObject {
                   ((TH2F*)fPHOSRecalibrationFactors->At(imod))->SetBinContent(iCol,iRow,c)                            ; }
     
   void          SetEMCALChannelRecalibrationFactors(Int_t iSM , TH2F* h) { fEMCALRecoUtils->SetEMCALChannelRecalibrationFactors(iSM,h)      ; }
+  void          SetEMCALChannelRecalibrationFactors1D(TH1S* h) { fEMCALRecoUtils->SetEMCALChannelRecalibrationFactors1D(h)      ; }
   void          SetPHOSChannelRecalibrationFactors(Int_t imod , TH2F* h) { fPHOSRecalibrationFactors ->AddAt(h,imod)                        ; }
 	
   TH2F *        GetEMCALChannelRecalibrationFactors(Int_t iSM)     const { return fEMCALRecoUtils->GetEMCALChannelRecalibrationFactors(iSM) ; }
+  TH1S *        GetEMCALChannelRecalibrationFactors1D()     const { return fEMCALRecoUtils->GetEMCALChannelRecalibrationFactors1D() ; }
   TH2F *        GetPHOSChannelRecalibrationFactors(Int_t imod)     const { return (TH2F*)fPHOSRecalibrationFactors->At(imod)                ; }
 	
   void          SetEMCALChannelRecalibrationFactors(TObjArray *map)      { fEMCALRecoUtils->SetEMCALChannelRecalibrationFactors(map)        ; }
@@ -277,9 +285,9 @@ class AliCalorimeterUtils : public TObject {
   void         SetEMCALChannelTimeRecalibrationFactor(Int_t bc, Int_t absID, Double_t c = 0)
   { fEMCALRecoUtils->SetEMCALChannelTimeRecalibrationFactor(bc, absID, c) ; }  
   
-  TH1F *       GetEMCALChannelTimeRecalibrationFactors(Int_t bc) const     { return fEMCALRecoUtils-> GetEMCALChannelTimeRecalibrationFactors(bc) ; }
+  TH1*         GetEMCALChannelTimeRecalibrationFactors(Int_t bc) const     { return (TH1*)fEMCALRecoUtils-> GetEMCALChannelTimeRecalibrationFactors(bc) ; }
   void         SetEMCALChannelTimeRecalibrationFactors(TObjArray *map)     { fEMCALRecoUtils->SetEMCALChannelTimeRecalibrationFactors(map)        ; }
-  void         SetEMCALChannelTimeRecalibrationFactors(Int_t bc , TH1F* h) { fEMCALRecoUtils->SetEMCALChannelTimeRecalibrationFactors(bc , h)     ; }
+  void         SetEMCALChannelTimeRecalibrationFactors(Int_t bc , TH1* h)  { fEMCALRecoUtils->SetEMCALChannelTimeRecalibrationFactors(bc , h)     ; }
 
   //------------------------------
   // Time Recalibration - L1 phase (EMCAL)
@@ -393,6 +401,8 @@ class AliCalorimeterUtils : public TObject {
   
   void          SetRunNumber(Int_t run)                         { fRunNumber  = run             ; }
   Int_t         GetRunNumber()                            const { return fRunNumber             ; }
+
+  void         SetUseOneHistForAllBCs(Bool_t useOneHist)        { fDoUseMergedBCs = useOneHist  ; fEMCALRecoUtils->SetUseOneHistForAllBCs(useOneHist) ; }
   
  private:
 
@@ -419,6 +429,10 @@ class AliCalorimeterUtils : public TObject {
   TGeoHMatrix *      fPHOSMatrix[5];            ///<  Geometry matrices with alignments.
 
   Bool_t             fRemoveBadChannels;        ///<  Check the channel status provided and remove clusters with bad channels.
+
+  Bool_t             fLoad1DBadChMap;           ///<  Flag to load 1D bad channel map.
+
+  Bool_t             fLoad1DRecalibFactors;     ///<  Flag to load 1D energy recalibration histogram
 
   TObjArray        * fPHOSBadChannelMap;        ///<  Array of histograms with map of bad channels, PHOS.
 
@@ -480,6 +494,8 @@ class AliCalorimeterUtils : public TObject {
   Bool_t             fMCECellClusFracCorrOn;    ///<  Correct or not the weight of cells in cluster.
   
   Float_t            fMCECellClusFracCorrParam[4]; ///<  Parameters for the function correcting the weight of the cells in the cluster.
+
+  Bool_t             fDoUseMergedBCs;           ///< flag to use one histo for all BCs
   
   /// Copy constructor not implemented.
   AliCalorimeterUtils(              const AliCalorimeterUtils & cu) ;
@@ -488,7 +504,7 @@ class AliCalorimeterUtils : public TObject {
   AliCalorimeterUtils & operator = (const AliCalorimeterUtils & cu) ; 
   
   /// \cond CLASSIMP
-  ClassDef(AliCalorimeterUtils,20) ;
+  ClassDef(AliCalorimeterUtils,21) ;
   /// \endcond
 
 } ;

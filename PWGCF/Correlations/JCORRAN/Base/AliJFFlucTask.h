@@ -22,12 +22,6 @@
 #include <AliAnalysisTaskSE.h>
 #include <AliAODMCParticle.h>
 #include "AliJHistManager.h"
-#include <AliESDpid.h>
-#include <AliPHOSGeoUtils.h>
-#include <AliPIDResponse.h>
-#include <AliPIDCombined.h>
-#include <AliAnalysisUtils.h>
-#include <AliVVertex.h>
 #include "AliJConst.h"
 #include "AliJFFlucAnalysis.h"
 
@@ -38,8 +32,11 @@ using namespace std;
 //class TF1;
 class TH1D;
 class TH2D;
+class TH3D;
 class TList;
 class TTree;
+class TRandom;
+class TRandom3;
 class AliMCEvent;
 class AliAODEvent;
 class AliAODTrack;
@@ -76,7 +73,8 @@ public:
 	double GetCentralityFromImpactPar(double ip);
 	//void SetIsWeakDeacyExclude( Bool_t WeakDecay){
 		//IsExcludeWeakDecay=WeakDecay; cout << "Setting Exclude Weak Decay Particles = " << WeakDecay <<	endl;}
-	void SetTestFilterBit( Int_t FilterBit){ fFilterBit = FilterBit; cout << "setting TestFilterBit = " << FilterBit << endl; }
+	void SetTestFilterBit( UInt_t FilterBit){ fFilterBit = FilterBit; cout << "setting TestFilterBit = " << FilterBit << endl; }
+	void SetNumTPCClusters( UInt_t NumTPCClusters){ fNumTPCClusters = NumTPCClusters; }
 	void SetEtaRange( double eta_min, double eta_max ){
 		fEta_min = eta_min; fEta_max = eta_max; cout << "setting Eta range as " << fEta_min << " ~ " <<	fEta_max << endl;}
 	void SetPtRange( double pt_min, double pt_max){
@@ -88,10 +86,12 @@ public:
 	void ReadVertexInfo( AliAODEvent *aod , double* fvertex);
 	Bool_t IsThisAWeakDecayingParticle(AliAODMCParticle *thisGuy);
 	Bool_t IsThisAWeakDecayingParticle(AliMCParticle *thisGuy);
-	void SetEffConfig( int effMode, int FilterBit );
-	void EnableCentFlat(const TString);
-	void EnablePhiModule(const TString);
+	void SetEffConfig( UInt_t effMode, UInt_t FilterBit );
+	UInt_t ConnectInputContainer(const TString, const TString);
 	void EnablePhiCorrection(const TString);
+	void EnableCentFlattening(const TString);
+	TH1 * GetCorrectionMap(UInt_t, UInt_t);
+	TH1 * GetCentCorrection();
 	//void SetIsPhiModule( Bool_t isphi){ IsPhiModule = isphi ;
 					//cout << "setting phi modulation = " << isphi << endl; }
 	void SetZVertexCut( double zvtxCut ){ fzvtxCut = zvtxCut;
@@ -114,6 +114,14 @@ public:
 	void SetQCetaCut( Double_t QC_eta_min, Double_t QC_eta_max){
 					fQC_eta_min=QC_eta_min; fQC_eta_max=QC_eta_max;
 					cout << "setting : QC eta range " << fQC_eta_min << "~" << fQC_eta_max << endl;}
+	enum SUBEVENT{
+		SUBEVENT_A = 0x1,
+		SUBEVENT_B = 0x2
+	};
+	void SelectSubevents(UInt_t nsubeventMask){
+		subeventMask = nsubeventMask;
+		cout << "setting subevent mask = " << hex << subeventMask << endl;
+	}
 
 	enum{
 		FLUC_MC = 0x1,
@@ -122,7 +130,7 @@ public:
 		//FLUC_PHI_MODULATION = 0x8,
 		//FLUC_PHI_INVERSE = 0x10,
 		FLUC_PHI_CORRECTION = 0x10,
-		FLUC_PHI_REJECTION = 0x20,
+		//FLUC_PHI_REJECTION = 0x20,
 		FLUC_SCPT = 0x40,
 		FLUC_EBE_WEIGHTING = 0x80,
 		FLUC_CENT_FLATTENING = 0x100,
@@ -134,51 +142,42 @@ public:
 	}
 
 private:
-	 //TF1 *pfOutlierLowCut, *pfOutlierHighCut;
 	 TClonesArray *fInputList;  // tracklist
 	 TDirectory *fOutput;     // output
 	 AliJFFlucAnalysis *fFFlucAna; // analysis code
-	 TH1D *h_ratio;
-	 TH1D *h_ModuledPhi[CENTN_NAT][2]; // cent7, sub2
-	 TFile *pDataFile[2];
-	 //std::unordered_map<UInt_t, TH2D *> PhiWeightMap[CENTN];
-	 std::map<UInt_t, TH2D *> PhiWeightMap[CENTN_NAT];
+	 std::map<UInt_t, TH1 *> PhiWeightMap[CENTN_NAT];
 
 	 TString fTaskName;
-	 int fEvtNum;
-	 int fFilterBit;
-	 int fEffMode;
-	 int fEffFilterBit;
+	 TString fCentDetName;
+	 UInt_t fEvtNum;
+	 UInt_t fFilterBit;
+	 UInt_t fNumTPCClusters;
+	 UInt_t fEffMode;
+	 UInt_t fEffFilterBit;
 	 int fPcharge;
 	 int fRunNum;
-	 unsigned int GlobTracks;
-	 unsigned int TPCTracks;
-	 unsigned int FB32Tracks;
-	 unsigned int FB32TOFTracks;
+	 UInt_t GlobTracks;
+	 UInt_t TPCTracks;
+	 UInt_t FB32Tracks;
+	 UInt_t FB32TOFTracks;
 	 double fEta_min;
 	 double fEta_max;
+	 double fQC_eta_min;
+	 double fQC_eta_max;
 	 double fPt_min;
 	 double fPt_max;
 	 double fzvtxCut;
 
-	 Double_t fQC_eta_min;
-	 Double_t fQC_eta_max;
+	 UInt_t subeventMask;
 
-	 TString fCentDetName;
-	 //TString fInFileName;
-	 /*Bool_t IsMC;
-	 Bool_t IsKineOnly;
-	 Bool_t IsExcludeWeakDecay;
-	 Bool_t IsCentFlat;
-	 Bool_t IsPhiModule;
-	 Bool_t IsSCptdep;
-	 //Bool_t IsSCwithQC;
-	 Bool_t IsEbEWeighted;
-	 Bool_t fCutOutliers;
-	 Bool_t fALICEIPinfo;*/
 	 UInt_t flags;
+	 UInt_t inputIndex;
+	 UInt_t phiInputIndex;
+	 UInt_t centInputIndex;
 
 	 ClassDef(AliJFFlucTask, 1);
 
 };
 #endif // AliJFFlucTask_H
+
+

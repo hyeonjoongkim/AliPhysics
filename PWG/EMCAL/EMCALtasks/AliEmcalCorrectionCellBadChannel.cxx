@@ -49,6 +49,27 @@ Bool_t AliEmcalCorrectionCellBadChannel::Initialize()
 
   fRecoUtils->SetPositionAlgorithm(AliEMCALRecoUtils::kPosTowerGlobal);
 
+  TString customBCmapPath = "";
+  GetProperty("customBadChannelFilePath", customBCmapPath);
+  if (customBCmapPath!="")
+    AliEmcalCorrectionComponent::SetCustomBadChannels(customBCmapPath);
+
+  Bool_t dead = kFALSE;
+  GetProperty("acceptDead", dead);
+  if ( dead ) fRecoUtils->SetDeadChannelAsGood();
+
+  Bool_t hot = kFALSE;
+  GetProperty("acceptHot", hot);
+  if ( hot ) fRecoUtils->SetHotChannelAsGood();  
+  
+  Bool_t warm = kFALSE;
+  GetProperty("acceptWarm", warm);
+  if ( warm ) fRecoUtils->SetWarmChannelAsGood();
+
+  // Load 1D bad channel map
+  GetProperty("load1DBadChMap", fLoad1DBadChMap);
+  fRecoUtils->SetUse1DBadChannelMap(fLoad1DBadChMap);
+  
   return kTRUE;
 }
 

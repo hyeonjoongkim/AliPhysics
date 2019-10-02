@@ -59,7 +59,8 @@ fPHOSGeoName (""),
 fEMCALGeo(0x0),                   fPHOSGeo(0x0), 
 fEMCALGeoMatrixSet(kFALSE),       fPHOSGeoMatrixSet(kFALSE), 
 fLoadEMCALMatrices(kFALSE),       fLoadPHOSMatrices(kFALSE),
-fRemoveBadChannels(kFALSE),       fPHOSBadChannelMap(0x0), 
+fRemoveBadChannels(kFALSE),       fLoad1DBadChMap(kFALSE),
+fLoad1DRecalibFactors(kFALSE),    fPHOSBadChannelMap(0x0), 
 fNCellsFromPHOSBorder(0),
 fNMaskCellColumns(0),             fMaskCellColumns(0x0),
 fRecalibration(kFALSE),           fRunDependentCorrection(kFALSE),
@@ -76,7 +77,8 @@ fImportGeometryFromFile(0),       fImportGeometryFilePath(""),
 fNSuperModulesUsed(0),            
 fFirstSuperModuleUsed(-1),        fLastSuperModuleUsed(-1),
 fRunNumber(0),
-fMCECellClusFracCorrOn(0),        fMCECellClusFracCorrParam()
+fMCECellClusFracCorrOn(0),        fMCECellClusFracCorrParam(),
+fDoUseMergedBCs(kFALSE)
 {
   InitParameters();
   for(Int_t i = 0; i < 22; i++) fEMCALMatrix[i] = 0 ;
@@ -131,9 +133,9 @@ void AliCalorimeterUtils::AccessOADB(AliVEvent* event)
     {
       AliOADBContainer *contBC=new AliOADBContainer("");
       if(fOADBFilePathEMCAL!="")
-        contBC->InitFromFile(Form("%s/EMCALBadChannels.root",fOADBFilePathEMCAL.Data()),"AliEMCALBadChannels"); 
+        contBC->InitFromFile(Form("%s/EMCALBadChannels%s.root",fOADBFilePathEMCAL.Data(), fLoad1DBadChMap ? "_1D" : ""),"AliEMCALBadChannels"); 
       else
-        contBC->InitFromFile(AliDataFile::GetFileNameOADB("EMCAL/EMCALBadChannels.root").data(),"AliEMCALBadChannels"); 
+        contBC->InitFromFile(AliDataFile::GetFileNameOADB(Form("EMCAL/EMCALBadChannels%s.root", fLoad1DBadChMap ? "_1D" : "")).data(),"AliEMCALBadChannels"); 
       
       TObjArray *arrayBC=(TObjArray*)contBC->GetObject(fRunNumber);
       
@@ -142,26 +144,44 @@ void AliCalorimeterUtils::AccessOADB(AliVEvent* event)
         SwitchOnDistToBadChannelRecalculation();
         AliInfo("Remove EMCAL bad cells");
         
-        for (Int_t i=0; i<nSM; ++i) 
-        {
-          TH2I *hbm = GetEMCALChannelStatusMap(i);
-          
+        if(fLoad1DBadChMap){
+          TH1C *hbm = GetEMCALChannelStatusMap1D();
+            
           if (hbm)
             delete hbm;
-          
-          hbm=(TH2I*)arrayBC->FindObject(Form("EMCALBadChannelMap_Mod%d",i));
+            
+          hbm=(TH1C*)arrayBC->FindObject("EMCALBadChannelMap");
           
           if (!hbm) 
           {
-            AliError(Form("Can not get EMCALBadChannelMap_Mod%d",i));
-            continue;
+            AliError("Can not get EMCALBadChannelMap");
           }
-          
+            
           hbm->SetDirectory(0);
-          SetEMCALChannelStatusMap(i,hbm);
-          
-        } // loop
-      } else AliInfo("Do NOT remove EMCAL bad channels\n"); // run array
+          SetEMCALChannelStatusMap1D(hbm);
+        }else{
+          for (Int_t i=0; i<nSM; ++i) 
+          {
+            TH2I *hbm = GetEMCALChannelStatusMap(i);
+            
+            if (hbm)
+              delete hbm;
+            
+            hbm=(TH2I*)arrayBC->FindObject(Form("EMCALBadChannelMap_Mod%d",i));
+            
+            if (!hbm) 
+            {
+              AliError(Form("Can not get EMCALBadChannelMap_Mod%d",i));
+              continue;
+            }
+            
+            hbm->SetDirectory(0);
+            SetEMCALChannelStatusMap(i,hbm);
+            
+          } // loop
+        }
+      
+      } else AliInfo("Do NOT remove EMCAL bad channels"); // run array
       
       delete contBC;
     }  // Remove bad
@@ -172,9 +192,9 @@ void AliCalorimeterUtils::AccessOADB(AliVEvent* event)
       AliOADBContainer *contRF=new AliOADBContainer("");
       
       if(fOADBFilePathEMCAL!="")
-        contRF->InitFromFile(Form("%s/EMCALRecalib.root",fOADBFilePathEMCAL.Data()),"AliEMCALRecalib");
+        contRF->InitFromFile(Form("%s/EMCALRecalib%s.root",fOADBFilePathEMCAL.Data(), fLoad1DRecalibFactors ? "_1D" : ""),"AliEMCALRecalib");
       else
-        contRF->InitFromFile(AliDataFile::GetFileNameOADB("EMCAL/EMCALRecalib.root").data(),"AliEMCALRecalib");
+        contRF->InitFromFile(AliDataFile::GetFileNameOADB(Form("EMCAL/EMCALRecalib%s.root", fLoad1DRecalibFactors ? "_1D" : "")).data(),"AliEMCALRecalib");
         
       TObjArray *recal=(TObjArray*)contRF->GetObject(fRunNumber);
       
@@ -189,6 +209,24 @@ void AliCalorimeterUtils::AccessOADB(AliVEvent* event)
           if(recalib)
           {
             AliInfo("Recalibrate EMCAL");
+
+
+          if(fLoad1DRecalibFactors){
+            TH1S *hbm = GetEMCALChannelRecalibrationFactors1D();
+              
+            if (hbm)
+              delete hbm;
+              
+            hbm=(TH1S*)recalib->FindObject("EMCALRecalFactors");
+            
+            if (!hbm) 
+            {
+              AliError("Can not get EMCALRecalFactors");
+            }
+              
+            hbm->SetDirectory(0);
+            SetEMCALChannelRecalibrationFactors1D(hbm);
+          }else{
             for (Int_t i=0; i < nSM; ++i)
             {
               TH2F *h = GetEMCALChannelRecalibrationFactors(i);
@@ -208,6 +246,8 @@ void AliCalorimeterUtils::AccessOADB(AliVEvent* event)
               
               SetEMCALChannelRecalibrationFactors(i,h);
             } // SM loop
+          }
+
           } else AliInfo("Do NOT recalibrate EMCAL, no params object array"); // array ok
         } else AliInfo("Do NOT recalibrate EMCAL, no params for pass"); // array pass ok
       } else AliInfo("Do NOT recalibrate EMCAL, no params for run");  // run number array ok
@@ -309,25 +349,44 @@ void AliCalorimeterUtils::AccessOADB(AliVEvent* event)
         if(trecalpass)
         {
           AliInfo("Time Recalibrate EMCAL");
-          for (Int_t ibc = 0; ibc < 4; ++ibc) 
-          {
-            TH1F *h = GetEMCALChannelTimeRecalibrationFactors(ibc);
+
+	  if(fDoUseMergedBCs){
+
+            TH1S *h = (TH1S*)GetEMCALChannelTimeRecalibrationFactors(0);
             
             if (h)
               delete h;
-            
-            h = (TH1F*)trecalpass->FindObject(Form("hAllTimeAvBC%d",ibc));
-            
+          
+            h = (TH1S*)trecalpass->FindObject("hAllTimeAv");// High Gain only
+          
             if (!h) 
-            {
-              AliError(Form("Could not load hAllTimeAvBC%d",ibc));
-              continue;
-            }
+              AliError("Could not load hAllTimeAv");
             
             h->SetDirectory(0);
+          
+            SetEMCALChannelTimeRecalibrationFactors(0,h);
+
+	  }else{
+            for (Int_t ibc = 0; ibc < 4; ++ibc) 
+            {
+              TH1F *h = (TH1F*)GetEMCALChannelTimeRecalibrationFactors(ibc);
             
-            SetEMCALChannelTimeRecalibrationFactors(ibc,h);
-          } // bunch crossing loop
+              if (h)
+                delete h;
+            
+              h = (TH1F*)trecalpass->FindObject(Form("hAllTimeAvBC%d",ibc));
+            
+              if (!h) 
+              {
+                AliError(Form("Could not load hAllTimeAvBC%d",ibc));
+                continue;
+              }
+            
+              h->SetDirectory(0);
+            
+              SetEMCALChannelTimeRecalibrationFactors(ibc,h);
+            } // bunch crossing loop
+	  }
         } else AliInfo("Do NOT recalibrate time EMCAL, no params for pass"); // array pass ok
       } else AliInfo("Do NOT recalibrate time EMCAL, no params for run");  // run number array ok
       
@@ -1719,6 +1778,8 @@ void AliCalorimeterUtils::InitParameters()
   fPHOSGeoMatrixSet     = kFALSE;
   
   fRemoveBadChannels    = kFALSE;
+
+  fLoad1DBadChMap       = kFALSE;
   
   fNCellsFromPHOSBorder = 0;
   
@@ -1892,10 +1953,10 @@ Bool_t AliCalorimeterUtils::IsMCParticleInCalorimeterAcceptance(Int_t calo, TPar
     Bool_t ok = GetEMCALGeometry()->GetAbsCellIdFromEtaPhi(particle->Eta(),particle->Phi(),absID);
     if(ok)
     {
-      Int_t icol = -1, irow = -1, iRCU = -1;
+      Int_t icol = -1, irow = -1, iRCU = -1, status = 0;
       Int_t nModule = GetModuleNumberCellIndexes(absID,calo, icol, irow, iRCU);
-      Int_t status  = GetEMCALChannelStatus(nModule,icol,irow);
-      if(status > 0) ok = kFALSE;
+      Bool_t bad    = GetEMCALChannelStatus(nModule,icol,irow,status);
+      if( bad ) ok = kFALSE;
     }
 
     return ok ;
@@ -1934,10 +1995,10 @@ Bool_t AliCalorimeterUtils::IsMCParticleInCalorimeterAcceptance(Int_t calo, AliA
     Bool_t ok = GetEMCALGeometry()->GetAbsCellIdFromEtaPhi(particle->Eta(),phi,absID);
     if(ok)
     {
-      Int_t icol = -1, irow = -1, iRCU = -1;
+      Int_t icol = -1, irow = -1, iRCU = -1, status = 0;
       Int_t nModule = GetModuleNumberCellIndexes(absID,calo, icol, irow, iRCU);
-      Int_t status  = GetEMCALChannelStatus(nModule,icol,irow);
-      if(status > 0) ok = kFALSE;
+      Bool_t bad    = GetEMCALChannelStatus(nModule,icol,irow,status);
+      if( bad ) ok = kFALSE;
     }
 
     return ok ;
@@ -1976,10 +2037,10 @@ Bool_t AliCalorimeterUtils::IsMCParticleInCalorimeterAcceptance(Int_t calo, AliV
     Bool_t ok = GetEMCALGeometry()->GetAbsCellIdFromEtaPhi(particle->Eta(),phi,absID);
     if(ok)
     {
-      Int_t icol = -1, irow = -1, iRCU = -1;
+      Int_t icol = -1, irow = -1, iRCU = -1, status = 0;
       Int_t nModule = GetModuleNumberCellIndexes(absID,calo, icol, irow, iRCU);
-      Int_t status  = GetEMCALChannelStatus(nModule,icol,irow);
-      if(status > 0) ok = kFALSE;
+      Bool_t bad    = GetEMCALChannelStatus(nModule,icol,irow,status);
+      if( bad ) ok = kFALSE;
     }
     
     return ok ;
@@ -2018,10 +2079,10 @@ Bool_t AliCalorimeterUtils::IsMCParticleInCalorimeterAcceptance(Int_t calo, Floa
     Bool_t ok = GetEMCALGeometry()->GetAbsCellIdFromEtaPhi(eta,phi,absID);
     if(ok)
     {
-      Int_t icol = -1, irow = -1, iRCU = -1;
+      Int_t icol = -1, irow = -1, iRCU = -1, status = 0;
       Int_t nModule = GetModuleNumberCellIndexes(absID,calo, icol, irow, iRCU);
-      Int_t status  = GetEMCALChannelStatus(nModule,icol,irow);
-      if(status > 0) ok = kFALSE;
+      Bool_t bad    = GetEMCALChannelStatus(nModule,icol,irow,status);
+      if( bad ) ok = kFALSE;
     }
 
     return ok ;
@@ -2250,7 +2311,7 @@ void AliCalorimeterUtils::RecalculateClusterTrackMatching(AliVEvent * event,
     fEMCALRecoUtils->GetMatchedResiduals(clus->GetID(),dZ,dR);
     
     if ( TMath::Abs(clus->GetTrackDx()) < 500 )
-      AliDebug(2,Form("Residuals (Old, New): z (%2.4f,%2.4f), x (%2.4f,%2.4f)\n",
+      AliDebug(2,Form("Residuals (Old, New): z (%2.4f,%2.4f), x (%2.4f,%2.4f)",
                       clus->GetTrackDz(),dZ,clus->GetTrackDx(),dR));
     
     clus->SetTrackDistance(dR,dZ);
